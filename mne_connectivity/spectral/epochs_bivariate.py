@@ -162,19 +162,30 @@ class _ciPLVEst(_EpochMeanConEstBase):
 
 class _PLIEst(_EpochMeanConEstBase):
     """PLI Estimator."""
+    # A2VIlab comment - In this version, we introduced a novel tolerance threshold to avoid computational error due to float values.
 
     name = "PLI"
     accumulate_psd = False
 
     def __init__(self, n_cons, n_freqs, n_times):
         super().__init__(n_cons, n_freqs, n_times)
+        
+        # A2VIlab comment - Define your custom tolerance to force to set as ZERO all value below the threshold in self.delta
+
+        self.delta = 1e-10 
 
         # allocate accumulator
         self._acc = np.zeros(self.csd_shape)
 
     def accumulate(self, con_idx, csd_xy):
         """Accumulate some connections."""
-        self._acc[con_idx] += np.sign(np.imag(csd_xy))
+        im_csd = np.imag(csd_xy)
+        
+        # A2VIlab comment -  Apply tolerance: if the absolute value is less than delta, return 0.
+        # Otherwise, calculate the sign regularly (1 or -1).
+        sign_im_csd = np.where(np.abs(im_csd) < self.delta, 0, np.sign(im_csd))
+        
+        self._acc[con_idx] += sign_im_csd
 
     def compute_con(self, con_idx, n_epochs):
         """Compute final con. score for some connections."""
@@ -182,7 +193,6 @@ class _PLIEst(_EpochMeanConEstBase):
             self.con_scores = np.zeros(self.csd_shape)
         pli_mean = self._acc[con_idx] / n_epochs
         self.con_scores[con_idx] = np.abs(pli_mean)
-
 
 class _PLIUnbiasedEst(_PLIEst):
     """Unbiased PLI Square Estimator."""
