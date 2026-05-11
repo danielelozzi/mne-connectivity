@@ -160,9 +160,26 @@ class _ciPLVEst(_EpochMeanConEstBase):
         self.con_scores[con_idx] = corrected_imag_plv
 
 
+
 class _PLIEst(_EpochMeanConEstBase):
-    """PLI Estimator."""
-    # A2VIlab comment - In this version, we introduced a novel tolerance threshold to avoid computational error due to float values.
+    """PLI Estimator.
+    
+    A2VIlab modifications:
+    ----------------------
+    Introduction of a relative tolerance threshold to mitigate floating-point precision errors. 
+    In the standard PLI calculation, the function `np.sign(np.imag(csd_xy))` evaluates even 
+    infinitesimal calculation residuals (e.g., 1e-16, which should mathematically be 0) 
+    assigning them an integer weight of +1 or -1. This artifact introduces spurious phase lags 
+    due solely to computational noise.
+    
+    To solve this at the root and make it independent of the physical scale of the data 
+    (e.g., vastly different orders of magnitude between EEG in microvolts and MEG in femtoteslas), 
+    a `rtol` (Relative Tolerance) parameter has been introduced. The algorithm compares the 
+    absolute value of the imaginary part with a tiny fraction (`rtol`) of the signal's total 
+    magnitude (|CSD|). If the imaginary projection is lower than this proportional threshold, 
+    it is considered a numerical artifact and forced to 0. This eliminates machine instability 
+    while preserving the actual neurophysiological signal.
+    """
 
     name = "PLI"
     accumulate_psd = False
@@ -170,20 +187,21 @@ class _PLIEst(_EpochMeanConEstBase):
     def __init__(self, n_cons, n_freqs, n_times):
         super().__init__(n_cons, n_freqs, n_times)
         
-        # A2VIlab comment - Define your custom tolerance to force to set as ZERO all value below the threshold in self.delta
-
-        self.delta = 1e-10 
+        # A2VIlab comment - Define custom relative tolerance (e.g. 1e-9) to force to ZERO all values where the imaginary part is below the threshold (rtol * absolute CSD)
+        self.rtol = 1e-9 
 
         # allocate accumulator
         self._acc = np.zeros(self.csd_shape)
 
     def accumulate(self, con_idx, csd_xy):
         """Accumulate some connections."""
+        # A2VIlab comment - Extracting both imaginary part and magnitude to apply relative thresholding
         im_csd = np.imag(csd_xy)
+        abs_csd = np.abs(csd_xy)
         
-        # A2VIlab comment -  Apply tolerance: if the absolute value is less than delta, return 0.
+        # A2VIlab comment - Apply relative tolerance: if the absolute imaginary value is less than rtol * absolute CSD, return 0.
         # Otherwise, calculate the sign regularly (1 or -1).
-        sign_im_csd = np.where(np.abs(im_csd) < self.delta, 0, np.sign(im_csd))
+        sign_im_csd = np.where(np.abs(im_csd) < (self.rtol * abs_csd), 0, np.sign(im_csd))
         
         self._acc[con_idx] += sign_im_csd
 
